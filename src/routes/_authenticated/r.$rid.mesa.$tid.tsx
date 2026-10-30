@@ -9,6 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch"; // Importação do Switch
 import {
   Dialog,
   DialogContent,
@@ -47,6 +48,7 @@ function TablePage() {
 
   // Estados para o fechamento da conta
   const [isCloseOpen, setIsCloseOpen] = useState(false);
+  const [applyServiceFee, setApplyServiceFee] = useState(true); // NOVO: Controla se a taxa será aplicada
   const [payMethod1, setPayMethod1] = useState("pix");
   const [payValue1, setPayValue1] = useState("");
   const [payMethod2, setPayMethod2] = useState("dinheiro");
@@ -115,12 +117,14 @@ function TablePage() {
   const [busy, setBusy] = useState(false);
   const total = cart.reduce((s, l) => s + l.price * l.quantity, 0);
 
-  // Lógica de Taxa de Serviço
+  // Lógica de Taxa de Serviço Dinâmica
   const subtotal = orders
     .filter((o) => o.status !== "cancelado")
     .reduce((s, o) => s + Number(o.total), 0);
-  const serviceFee = subtotal * SERVICE_FEE_RATE;
-  const consumed = subtotal + serviceFee; // O total final (com taxa)
+
+  // Se o switch estiver ligado, calcula 10%, senão é 0.
+  const serviceFee = applyServiceFee ? subtotal * SERVICE_FEE_RATE : 0;
+  const consumed = subtotal + serviceFee;
 
   const mgr = role === "gerente" || role === "admin";
 
@@ -143,7 +147,6 @@ function TablePage() {
         { product_id: p.id, name: p.name, price: Number(p.price), quantity: 1, notes: "" },
       ];
     });
-    // Vibração tátil para confirmar a adição
     if (navigator.vibrate) navigator.vibrate(50);
   }
 
@@ -168,7 +171,7 @@ function TablePage() {
     toast.success("Pedido enviado para a cozinha");
     setCart([]);
     setNotes("");
-    setIsCartOpen(false); // Fecha o carrinho após enviar
+    setIsCartOpen(false);
     qc.invalidateQueries({ queryKey: ["table", tid] });
     qc.invalidateQueries({ queryKey: ["orders", rid] });
   }
@@ -187,9 +190,9 @@ function TablePage() {
     const v1 = Number(payValue1.replace(",", ".")) || 0;
     const v2 = payValue2 ? Number(payValue2.replace(",", ".")) : 0;
 
-    // A validação agora é feita em cima do total COM TAXA (consumed)
+    // A validação usa o 'consumed', que é recalculado dinamicamente com base no Switch
     if (v2 > 0 && Math.abs(v1 + v2 - consumed) > 0.01) {
-      toast.error("A soma das formas de pagamento não bate com o total consumido (incluindo 10%).");
+      toast.error("A soma das formas de pagamento não bate com o total.");
       return;
     }
 
@@ -205,7 +208,7 @@ function TablePage() {
       return;
     }
 
-    // Atualiza o valor pago com a taxa incluída
+    // Atualiza o valor pago com o valor final (seja com ou sem taxa)
     if (v2 > 0) {
       await supabase
         .from("table_sessions")
@@ -223,9 +226,9 @@ function TablePage() {
       table: table.label,
       restaurant: table.restaurants,
       orders: orders.filter((o) => o.status !== "cancelado"),
-      total: consumed, // Passa o total com taxa para o cupom
+      total: consumed,
       subtotal: subtotal,
-      serviceFee: serviceFee,
+      serviceFee: serviceFee, // Salva na nota o valor da taxa (que pode ser 0)
       p1: { method: payMethod1, value: finalV1 },
       p2: v2 > 0 ? { method: payMethod2, value: v2 } : null,
       date: new Date(),
@@ -264,7 +267,6 @@ function TablePage() {
 
   return (
     <div className="pb-24">
-      {/* CABEÇALHO FIXO */}
       <div className="sticky top-0 z-10 bg-background/95 backdrop-blur pb-2 pt-2 -mx-4 px-4 sm:mx-0 sm:px-0">
         <div className="mb-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -300,13 +302,24 @@ function TablePage() {
                     <DialogTitle>Fechar Conta - Mesa {table?.label}</DialogTitle>
                   </DialogHeader>
                   <div className="space-y-4 py-4">
+                    {/* NOVO: Switch para ativar/desativar a taxa */}
+                    <div className="flex items-center justify-between rounded-lg border p-3">
+                      <div className="space-y-0.5">
+                        <Label className="text-base">Taxa de Serviço (10%)</Label>
+                        <p className="text-xs text-muted-foreground">
+                          Desmarque caso o cliente não queira pagar a taxa.
+                        </p>
+                      </div>
+                      <Switch checked={applyServiceFee} onCheckedChange={setApplyServiceFee} />
+                    </div>
+
                     <div className="rounded-lg bg-muted p-3 space-y-1 text-sm">
                       <div className="flex justify-between">
                         <span>Subtotal:</span>
                         <span>{brl(subtotal)}</span>
                       </div>
                       <div className="flex justify-between text-muted-foreground">
-                        <span>Taxa de serviço (10%):</span>
+                        <span>Taxa de serviço:</span>
                         <span>{brl(serviceFee)}</span>
                       </div>
                       <div className="flex justify-between font-bold text-base pt-2 border-t mt-2">
@@ -369,7 +382,6 @@ function TablePage() {
           </div>
         </div>
 
-        {/* BARRA DE BUSCA */}
         <div className="relative">
           <Search className="absolute left-4 top-3.5 size-6 text-muted-foreground" />
           <Input
@@ -382,9 +394,7 @@ function TablePage() {
         </div>
       </div>
 
-      {/* ÁREA DE CONTEÚDO */}
       <div className="mt-4 space-y-6">
-        {/* RESULTADOS DA BUSCA */}
         {search.trim().length > 0 && (
           <div className="space-y-2 animate-in fade-in">
             {searchResults.map((p) => (
@@ -415,7 +425,6 @@ function TablePage() {
           </div>
         )}
 
-        {/* ESTADO VAZIO INICIAL (Só aparece quando não há busca nem pedidos) */}
         {!search.trim() && orders.length === 0 && (
           <div className="flex flex-col items-center justify-center py-20 text-muted-foreground opacity-50">
             <Search className="size-16 mb-4" />
@@ -423,7 +432,6 @@ function TablePage() {
           </div>
         )}
 
-        {/* PEDIDOS JÁ FEITOS (Histórico) */}
         {orders.length > 0 && !search.trim() && (
           <div>
             <h2 className="mb-3 text-sm font-bold uppercase tracking-wider text-muted-foreground">
@@ -438,7 +446,6 @@ function TablePage() {
         )}
       </div>
 
-      {/* BOTÃO FLUTUANTE DO CARRINHO */}
       {cart.length > 0 && (
         <div className="fixed bottom-0 left-0 right-0 p-4 bg-background border-t shadow-[0_-10px_40px_rgba(0,0,0,0.1)] z-40 animate-in slide-in-from-bottom-full">
           <Button
@@ -454,7 +461,6 @@ function TablePage() {
         </div>
       )}
 
-      {/* MODAL DO CARRINHO */}
       <Dialog open={isCartOpen} onOpenChange={setIsCartOpen}>
         <DialogContent className="sm:max-w-md h-[90vh] flex flex-col p-0 gap-0">
           <DialogHeader className="p-4 border-b bg-muted/30">
@@ -529,7 +535,6 @@ function TablePage() {
         </DialogContent>
       </Dialog>
 
-      {/* MODAL DO CUPOM */}
       <Dialog open={isReceiptOpen} onOpenChange={setIsReceiptOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
@@ -584,7 +589,7 @@ function TablePage() {
                 <span>{brl(receiptData?.subtotal || 0)}</span>
               </div>
               <div className="flex justify-between text-sm">
-                <span>Taxa de serviço (10%):</span>
+                <span>Taxa de serviço:</span>
                 <span>{brl(receiptData?.serviceFee || 0)}</span>
               </div>
               <div className="flex justify-between font-bold text-base mt-2">

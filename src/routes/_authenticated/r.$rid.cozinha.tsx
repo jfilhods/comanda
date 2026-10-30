@@ -74,8 +74,8 @@ function Kitchen() {
             items:order_items(
               *,
               product:products(
+                description,
                 categories(name)
-              )
             )
           `,
           ) // Incluímos a categoria do produto

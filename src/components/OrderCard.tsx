@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -25,6 +26,7 @@ export type OrderRow = {
   waiter_id: string;
   table: { label: string } | null;
   items: {
+    product: any;
     id: string;
     product_name: string;
     quantity: number;
@@ -101,6 +103,7 @@ export function OrderCard({
             <div className="flex justify-between gap-2">
               <span>
                 <b>{i.quantity}×</b> {i.product_name}
+                <b>{i.product?.description && ` - ${i.product.description}`}</b>
               </span>
               {!big && <span className="text-muted-foreground">{brl(i.subtotal)}</span>}
             </div>
