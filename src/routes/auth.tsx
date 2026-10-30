@@ -99,6 +99,16 @@ function AuthPage() {
             <p className="text-center text-sm font-medium text-muted-foreground">
               Quem está entrando?
             </p>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-8 gap-1.5 px-2 text-muted-foreground hover:text-foreground"
+              onClick={() => nav({ to: "/" })}
+            >
+              <span aria-hidden>←</span>
+              Voltar
+            </Button>
 
             <Button
               type="button"
@@ -233,13 +243,14 @@ function AuthPage() {
         {mode === "select" && (
           <p className="text-center text-xs text-muted-foreground">
             Primeiro acesso de empresa?{" "}
-            <button
-              type="button"
+            <a
+              href="https://wa.me/5582991189998?text=Ol%C3%A1!%20Gostaria%20de%20falar%20sobre%20o%20primeiro%20acesso%20ao%20Comanda."
+              target="_blank"
+              rel="noopener noreferrer"
               className="underline hover:text-foreground"
-              onClick={() => nav({ to: "/auth" })} // troque pela rota de cadastro se existir
             >
               Falar com o administrador
-            </button>
+            </a>
           </p>
         )}
       </div>

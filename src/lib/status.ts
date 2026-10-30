@@ -7,7 +7,7 @@ export type OrderStatus =
   | "cancelamento_solicitado"
   | "cancelado";
 
-export type StaffRole = "gerente" | "garcom" | "cozinha";
+export type StaffRole = "gerente" | "garcom" | "cozinha" | "entregador";
 
 export const STATUS_LABEL: Record<OrderStatus, string> = {
   novo: "Novo",
@@ -33,6 +33,7 @@ export const ROLE_LABEL: Record<StaffRole, string> = {
   gerente: "Gerente",
   garcom: "Garçom",
   cozinha: "Cozinha",
+  entregador: "Entregador",
 };
 
 export const TABLE_STATUS_LABEL: Record<string, string> = {
