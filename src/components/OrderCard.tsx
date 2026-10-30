@@ -26,6 +26,7 @@ export type OrderRow = {
   waiter_id: string;
   table: { label: string } | null;
   items: {
+    status: string;
     product: any;
     id: string;
     product_name: string;

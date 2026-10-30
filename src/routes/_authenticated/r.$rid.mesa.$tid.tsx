@@ -119,9 +119,9 @@ function TablePage() {
 
   // Lógica de Taxa de Serviço Dinâmica
   const subtotal = orders
-    .filter((o) => o.status !== "cancelado")
-    .reduce((s, o) => s + Number(o.total), 0);
-
+    .flatMap((o) => o.items) // Pega todos os itens de todos os pedidos da sessão
+    .filter((item) => item.status !== "cancelado") // Filtra itens cancelados
+    .reduce((sum, item) => sum + Number(item.subtotal), 0);
   // Se o switch estiver ligado, calcula 10%, senão é 0.
   const serviceFee = applyServiceFee ? subtotal * SERVICE_FEE_RATE : 0;
   const consumed = subtotal + serviceFee;
