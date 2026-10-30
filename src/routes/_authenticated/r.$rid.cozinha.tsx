@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
@@ -12,6 +13,18 @@ export const Route = createFileRoute("/_authenticated/r/$rid/cozinha")({
   component: Kitchen,
 });
 
+// Nomes das categorias que a cozinha NÃO deve ver (bebidas e drinques)
+const DRINK_CATEGORIES = [
+  "Cervejas",
+  "Cerveja 600ml",
+  "Bebidas",
+  "Não Alcoólicos",
+  "Long Neck",
+  "Doses",
+  "Sucos",
+  "Sucos Naturais",
+  "Drinks",
+];
 let audioCtx: AudioContext | null = null;
 
 function getCtx() {
@@ -49,18 +62,43 @@ function Kitchen() {
   const role = useRestaurantRole(rid)!;
   const [sound, setSound] = useState(true);
   useRealtime(rid, ["orders"], [["orders", rid]]);
-  const { data: orders = [] } = useQuery({
+  const { data: ordersRaw = [] } = useQuery({
     queryKey: ["orders", rid, "kitchen"],
     queryFn: async () =>
       ((
         await supabase
           .from("orders")
-          .select(ORDER_SELECT)
+          .select(
+            `
+            *,
+            items:order_items(
+              *,
+              product:products(
+                categories(name)
+              )
+            )
+          `,
+          ) // Incluímos a categoria do produto
           .eq("restaurant_id", rid)
           .in("status", ["novo", "aceito", "em_preparo", "pronto", "cancelamento_solicitado"])
           .order("created_at")
-      ).data ?? []) as unknown as OrderRow[],
+      ).data ?? []) as any[],
   });
+
+  // Filtra os itens de cada pedido, removendo as bebidas
+  const orders = ordersRaw
+    .map((order) => {
+      const itemsFiltrados = order.items.filter((item: any) => {
+        const catName = item.product?.categories?.name;
+        // Se a categoria estiver na lista de exclusão, não mostra
+        if (catName && DRINK_CATEGORIES.includes(catName)) return false;
+        return true;
+      });
+
+      return { ...order, items: itemsFiltrados };
+    })
+    // Remove pedidos que ficaram sem itens (ex: pedido só de bebida)
+    .filter((order) => order.items.length > 0);
 
   const seen = useRef<Set<string> | null>(null);
   const [fresh, setFresh] = useState<Set<string>>(new Set());
