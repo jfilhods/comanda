@@ -28,6 +28,7 @@ export const Route = createFileRoute("/_authenticated/r/$rid/mesa/$tid")({
 });
 
 type Line = { product_id: string; name: string; price: number; quantity: number; notes: string };
+const SERVICE_FEE_RATE = 0.1; // 10% de taxa de serviço
 
 function normalizeStr(str: string) {
   return str
@@ -113,9 +114,14 @@ function TablePage() {
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
   const total = cart.reduce((s, l) => s + l.price * l.quantity, 0);
-  const consumed = orders
+
+  // Lógica de Taxa de Serviço
+  const subtotal = orders
     .filter((o) => o.status !== "cancelado")
     .reduce((s, o) => s + Number(o.total), 0);
+  const serviceFee = subtotal * SERVICE_FEE_RATE;
+  const consumed = subtotal + serviceFee; // O total final (com taxa)
+
   const mgr = role === "gerente" || role === "admin";
 
   // Todos os produtos achatados para a busca
@@ -181,8 +187,9 @@ function TablePage() {
     const v1 = Number(payValue1.replace(",", ".")) || 0;
     const v2 = payValue2 ? Number(payValue2.replace(",", ".")) : 0;
 
+    // A validação agora é feita em cima do total COM TAXA (consumed)
     if (v2 > 0 && Math.abs(v1 + v2 - consumed) > 0.01) {
-      toast.error("A soma das formas de pagamento não bate com o total consumido.");
+      toast.error("A soma das formas de pagamento não bate com o total consumido (incluindo 10%).");
       return;
     }
 
@@ -198,6 +205,7 @@ function TablePage() {
       return;
     }
 
+    // Atualiza o valor pago com a taxa incluída
     if (v2 > 0) {
       await supabase
         .from("table_sessions")
@@ -215,7 +223,9 @@ function TablePage() {
       table: table.label,
       restaurant: table.restaurants,
       orders: orders.filter((o) => o.status !== "cancelado"),
-      total: data,
+      total: consumed, // Passa o total com taxa para o cupom
+      subtotal: subtotal,
+      serviceFee: serviceFee,
       p1: { method: payMethod1, value: finalV1 },
       p2: v2 > 0 ? { method: payMethod2, value: v2 } : null,
       date: new Date(),
@@ -290,9 +300,19 @@ function TablePage() {
                     <DialogTitle>Fechar Conta - Mesa {table?.label}</DialogTitle>
                   </DialogHeader>
                   <div className="space-y-4 py-4">
-                    <div className="flex justify-between rounded-lg bg-muted p-3 font-bold">
-                      <span>Total Consumido:</span>
-                      <span>{brl(consumed)}</span>
+                    <div className="rounded-lg bg-muted p-3 space-y-1 text-sm">
+                      <div className="flex justify-between">
+                        <span>Subtotal:</span>
+                        <span>{brl(subtotal)}</span>
+                      </div>
+                      <div className="flex justify-between text-muted-foreground">
+                        <span>Taxa de serviço (10%):</span>
+                        <span>{brl(serviceFee)}</span>
+                      </div>
+                      <div className="flex justify-between font-bold text-base pt-2 border-t mt-2">
+                        <span>Total:</span>
+                        <span>{brl(consumed)}</span>
+                      </div>
                     </div>
                     <div className="space-y-3">
                       <Label>Forma de Pagamento 1</Label>
@@ -559,6 +579,14 @@ function TablePage() {
                 </tbody>
               </table>
               <div className="divider"></div>
+              <div className="flex justify-between text-sm mt-2">
+                <span>Subtotal:</span>
+                <span>{brl(receiptData?.subtotal || 0)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span>Taxa de serviço (10%):</span>
+                <span>{brl(receiptData?.serviceFee || 0)}</span>
+              </div>
               <div className="flex justify-between font-bold text-base mt-2">
                 <span>TOTAL:</span>
                 <span>{brl(receiptData?.total || 0)}</span>
