@@ -17,18 +17,42 @@ function RestaurantLayout() {
   const role = useRestaurantRole(rid);
   const { data: r } = useQuery({
     queryKey: ["restaurant", rid],
-    queryFn: async () => (await supabase.from("restaurants").select("id, name").eq("id", rid).maybeSingle()).data,
+    queryFn: async () =>
+      (await supabase.from("restaurants").select("id, name").eq("id", rid).maybeSingle()).data,
   });
   const mgr = role === "gerente" || role === "admin";
   return (
     <div className="min-h-screen">
       <AppHeader>
         <span className="mr-3 font-semibold text-accent">{r?.name}</span>
-        {mgr && <Link to="/r/$rid/painel" params={{ rid }} className={tabCls} activeProps={activeCls}>Painel</Link>}
-        {(mgr || role === "garcom") && <Link to="/r/$rid/mesas" params={{ rid }} className={tabCls} activeProps={activeCls}>Mesas</Link>}
-        {(mgr || role === "cozinha") && <Link to="/r/$rid/cozinha" params={{ rid }} className={tabCls} activeProps={activeCls}>Cozinha</Link>}
-        {mgr && <Link to="/r/$rid/cardapio" params={{ rid }} className={tabCls} activeProps={activeCls}>Cardápio</Link>}
-        {mgr && <Link to="/r/$rid/equipe" params={{ rid }} className={tabCls} activeProps={activeCls}>Equipe</Link>}
+        {mgr && (
+          <Link to="/r/$rid/painel" params={{ rid }} className={tabCls} activeProps={activeCls}>
+            Painel
+          </Link>
+        )}
+        {(mgr || role === "garcom") && (
+          <Link to="/r/$rid/mesas" params={{ rid }} className={tabCls} activeProps={activeCls}>
+            Mesas
+          </Link>
+        )}
+        {(mgr || role === "cozinha") && (
+          <Link to="/r/$rid/cozinha" params={{ rid }} className={tabCls} activeProps={activeCls}>
+            Cozinha
+          </Link>
+        )}
+        {mgr && (
+          <Link to="/r/$rid/cardapio" params={{ rid }} className={tabCls} activeProps={activeCls}>
+            Cardápio
+          </Link>
+        )}
+        {mgr && (
+          <Link to="/r/$rid/equipe" params={{ rid }} className={tabCls} activeProps={activeCls}>
+            Equipe
+          </Link>
+        )}
+        <Link to="/r/$rid/relatorios" params={{ rid }} className={tabCls} activeProps={activeCls}>
+          Relatórios
+        </Link>
       </AppHeader>
       {role === null ? (
         <p className="p-10 text-muted-foreground">Carregando…</p>

@@ -21,6 +21,7 @@ import { Route as AuthenticatedRRidCozinhaRouteImport } from './routes/_authenti
 import { Route as AuthenticatedRRidEquipeRouteImport } from './routes/_authenticated/r.$rid.equipe'
 import { Route as AuthenticatedRRidMesasRouteImport } from './routes/_authenticated/r.$rid.mesas'
 import { Route as AuthenticatedRRidPainelRouteImport } from './routes/_authenticated/r.$rid.painel'
+import { Route as AuthenticatedRRidRelatoriosRouteImport } from './routes/_authenticated/r.$rid.relatorios'
 import { Route as AuthenticatedRRidMesaTidRouteImport } from './routes/_authenticated/r.$rid.mesa.$tid'
 
 const IndexRoute = IndexRouteImport.update({
@@ -84,6 +85,12 @@ const AuthenticatedRRidPainelRoute = AuthenticatedRRidPainelRouteImport.update({
   path: '/painel',
   getParentRoute: () => AuthenticatedRRidRoute,
 } as any)
+const AuthenticatedRRidRelatoriosRoute =
+  AuthenticatedRRidRelatoriosRouteImport.update({
+    id: '/relatorios',
+    path: '/relatorios',
+    getParentRoute: () => AuthenticatedRRidRoute,
+  } as any)
 const AuthenticatedRRidMesaTidRoute =
   AuthenticatedRRidMesaTidRouteImport.update({
     id: '/mesa/$tid',
@@ -102,6 +109,7 @@ export interface FileRoutesByFullPath {
   '/r/$rid/equipe': typeof AuthenticatedRRidEquipeRoute
   '/r/$rid/mesas': typeof AuthenticatedRRidMesasRoute
   '/r/$rid/painel': typeof AuthenticatedRRidPainelRoute
+  '/r/$rid/relatorios': typeof AuthenticatedRRidRelatoriosRoute
   '/r/$rid/': typeof AuthenticatedRRidIndexRoute
   '/r/$rid/mesa/$tid': typeof AuthenticatedRRidMesaTidRoute
 }
@@ -115,6 +123,7 @@ export interface FileRoutesByTo {
   '/r/$rid/equipe': typeof AuthenticatedRRidEquipeRoute
   '/r/$rid/mesas': typeof AuthenticatedRRidMesasRoute
   '/r/$rid/painel': typeof AuthenticatedRRidPainelRoute
+  '/r/$rid/relatorios': typeof AuthenticatedRRidRelatoriosRoute
   '/r/$rid': typeof AuthenticatedRRidIndexRoute
   '/r/$rid/mesa/$tid': typeof AuthenticatedRRidMesaTidRoute
 }
@@ -131,6 +140,7 @@ export interface FileRoutesById {
   '/_authenticated/r/$rid/equipe': typeof AuthenticatedRRidEquipeRoute
   '/_authenticated/r/$rid/mesas': typeof AuthenticatedRRidMesasRoute
   '/_authenticated/r/$rid/painel': typeof AuthenticatedRRidPainelRoute
+  '/_authenticated/r/$rid/relatorios': typeof AuthenticatedRRidRelatoriosRoute
   '/_authenticated/r/$rid/': typeof AuthenticatedRRidIndexRoute
   '/_authenticated/r/$rid/mesa/$tid': typeof AuthenticatedRRidMesaTidRoute
 }
@@ -147,6 +157,7 @@ export interface FileRouteTypes {
     | '/r/$rid/equipe'
     | '/r/$rid/mesas'
     | '/r/$rid/painel'
+    | '/r/$rid/relatorios'
     | '/r/$rid/'
     | '/r/$rid/mesa/$tid'
   fileRoutesByTo: FileRoutesByTo
@@ -160,6 +171,7 @@ export interface FileRouteTypes {
     | '/r/$rid/equipe'
     | '/r/$rid/mesas'
     | '/r/$rid/painel'
+    | '/r/$rid/relatorios'
     | '/r/$rid'
     | '/r/$rid/mesa/$tid'
   id:
@@ -175,6 +187,7 @@ export interface FileRouteTypes {
     | '/_authenticated/r/$rid/equipe'
     | '/_authenticated/r/$rid/mesas'
     | '/_authenticated/r/$rid/painel'
+    | '/_authenticated/r/$rid/relatorios'
     | '/_authenticated/r/$rid/'
     | '/_authenticated/r/$rid/mesa/$tid'
   fileRoutesById: FileRoutesById
@@ -271,6 +284,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedRRidPainelRouteImport
       parentRoute: typeof AuthenticatedRRidRoute
     }
+    '/_authenticated/r/$rid/relatorios': {
+      id: '/_authenticated/r/$rid/relatorios'
+      path: '/relatorios'
+      fullPath: '/r/$rid/relatorios'
+      preLoaderRoute: typeof AuthenticatedRRidRelatoriosRouteImport
+      parentRoute: typeof AuthenticatedRRidRoute
+    }
     '/_authenticated/r/$rid/mesa/$tid': {
       id: '/_authenticated/r/$rid/mesa/$tid'
       path: '/mesa/$tid'
@@ -287,6 +307,7 @@ interface AuthenticatedRRidRouteChildren {
   AuthenticatedRRidEquipeRoute: typeof AuthenticatedRRidEquipeRoute
   AuthenticatedRRidMesasRoute: typeof AuthenticatedRRidMesasRoute
   AuthenticatedRRidPainelRoute: typeof AuthenticatedRRidPainelRoute
+  AuthenticatedRRidRelatoriosRoute: typeof AuthenticatedRRidRelatoriosRoute
   AuthenticatedRRidIndexRoute: typeof AuthenticatedRRidIndexRoute
   AuthenticatedRRidMesaTidRoute: typeof AuthenticatedRRidMesaTidRoute
 }
@@ -297,6 +318,7 @@ const AuthenticatedRRidRouteChildren: AuthenticatedRRidRouteChildren = {
   AuthenticatedRRidEquipeRoute: AuthenticatedRRidEquipeRoute,
   AuthenticatedRRidMesasRoute: AuthenticatedRRidMesasRoute,
   AuthenticatedRRidPainelRoute: AuthenticatedRRidPainelRoute,
+  AuthenticatedRRidRelatoriosRoute: AuthenticatedRRidRelatoriosRoute,
   AuthenticatedRRidIndexRoute: AuthenticatedRRidIndexRoute,
   AuthenticatedRRidMesaTidRoute: AuthenticatedRRidMesaTidRoute,
 }
