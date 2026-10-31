@@ -179,42 +179,20 @@ function TablePage() {
   async function send() {
     setBusy(true);
 
-    // Chama a RPC para criar o pedido
-    const { data: newOrderId, error } = await supabase.rpc("create_order", {
+    // Chama a RPC para criar o pedido (O banco vai colocar tudo como 'novo')
+    const { error } = await supabase.rpc("create_order", {
       _table_id: tid,
       _items: cart.map(({ product_id, quantity, notes }) => ({ product_id, quantity, notes })),
       _notes: notes,
     });
 
+    setBusy(false);
+
     if (error) {
-      setBusy(false);
       toast.error(error.message);
       return;
     }
 
-    // NOVO: Atualiza no frontend os itens que devem nascer como "entregue"
-    try {
-      // Filtra os itens do carrinho que são de categorias de bebida
-      const autoDeliverProductIds = cart
-        .filter((cartItem) => {
-          const prod = allProducts.find((p) => p.id === cartItem.product_id);
-          return prod && AUTO_DELIVER_CATEGORIES.includes(normalizeStr(prod.categoryName));
-        })
-        .map((c) => c.product_id);
-
-      // Se houver itens de bebida, atualiza o status deles no banco
-      if (autoDeliverProductIds.length > 0 && newOrderId) {
-        await supabase
-          .from("order_items")
-          .update({ status: "entregue" })
-          .eq("order_id", newOrderId)
-          .in("product_id", autoDeliverProductIds);
-      }
-    } catch (err) {
-      console.error("Erro ao auto-entregar bebidas:", err);
-    }
-
-    setBusy(false);
     toast.success("Pedido enviado!");
     setCart([]);
     setNotes("");

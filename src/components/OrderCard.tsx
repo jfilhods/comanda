@@ -61,30 +61,19 @@ export function StatusBadge({ s }: { s: OrderStatus }) {
   );
 }
 
-const AUTO_DELIVER_CATEGORIES = [
-  "drinks",
-  "sucos naturais",
-  "doses",
-  "bebidas",
-  "long necks",
-  "cervejas 600ml",
-  "não alcoólicos",
-  "nao alcoolicos",
-];
-
 function isBebida(nomeItem: string) {
   const n = nomeItem
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase();
-  // Checagem heurística pelo nome do produto (já que não temos a categoria no payload do item)
   return (
     n.includes("suco") ||
     n.includes("cerveja") ||
     n.includes("drink") ||
     n.includes("refrigerante") ||
     n.includes("agua") ||
-    n.includes("dose")
+    n.includes("dose") ||
+    n.includes("long neck")
   );
 }
 
@@ -115,8 +104,12 @@ export function OrderCard({
     if (await changeStatus(o.id, to, reason)) refresh();
   }
 
-  // Verifica se o pedido tem apenas bebidas (se sim, o gerente não precisa preparar)
   const allItemsAreBebidas = o.items.every((i) => isBebida(i.product_name));
+  const onlyBebidasAndGarcom = isGarcom && allItemsAreBebidas;
+
+  // O gerente e a cozinha sempre veem o fluxo real.
+  // O garçom só vê "Entregue" no topo se for apenas bebida.
+  const displayStatus = onlyBebidasAndGarcom ? "entregue" : o.status;
 
   return (
     <div className={`card-surface flex flex-col p-4 ${highlight ? "animate-new-order" : ""}`}>
@@ -127,8 +120,7 @@ export function OrderCard({
             #{o.number} · {time(o.created_at)}
           </span>
         </div>
-        {/* Se for garçom e só tiver bebida, mostramos entregue direto no topo também */}
-        <StatusBadge s={isGarcom && allItemsAreBebidas ? "entregue" : o.status} />
+        <StatusBadge s={displayStatus as OrderStatus} />
       </div>
       <ul className={`mt-3 space-y-1.5 ${big ? "text-base" : "text-sm"}`}>
         {o.items.map((i) => {
@@ -144,7 +136,6 @@ export function OrderCard({
                 </span>
                 <div className="flex items-center gap-2">
                   {!big && <span className="text-muted-foreground">{brl(i.subtotal)}</span>}
-                  {/* Badge individual do item */}
                   {showAsDelivered && (
                     <span className="text-[10px] uppercase font-bold text-emerald-600 bg-emerald-100 px-1.5 py-0.5 rounded">
                       Entregue
@@ -162,8 +153,8 @@ export function OrderCard({
       {!big && <div className="mt-2 text-right font-semibold">{brl(o.total)}</div>}
 
       <div className="mt-auto flex flex-wrap gap-2 pt-3">
-        {/* O botão de próximo passo aparece para o gerente e cozinha (fluxo normal) */}
-        {next && !(isGarcom && allItemsAreBebidas) && (
+        {/* Se houver próximo passo, mostra o botão, EXCETO se for garçom e só tiver bebidas */}
+        {next && !onlyBebidasAndGarcom && (
           <Button
             size={big ? "lg" : "sm"}
             className="flex-1"
@@ -172,6 +163,7 @@ export function OrderCard({
             {NEXT_LABEL[next]}
           </Button>
         )}
+
         {mgr && o.status === "cancelamento_solicitado" && o.previous_status && (
           <Button
             size="sm"

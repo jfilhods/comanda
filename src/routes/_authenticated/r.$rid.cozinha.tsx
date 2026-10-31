@@ -2,7 +2,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import { Bell, BellOff } from "lucide-react";
+import { Bell, BellOff, Volume2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { OrderCard, ORDER_SELECT, type OrderRow } from "@/components/OrderCard";
@@ -13,41 +13,111 @@ export const Route = createFileRoute("/_authenticated/r/$rid/cozinha")({
   component: Kitchen,
 });
 
-// Nomes das categorias que a cozinha NÃO deve ver (bebidas e drinques)
-const DRINK_CATEGORIES = [
-  "Cervejas",
-  "Cerveja 600ml",
-  "Bebidas",
-  "Não Alcoólicos",
-  "Long Neck",
-  "Doses",
-  "Sucos",
-  "Sucos Naturais",
-  "Drinks",
-];
+// -- LÓGICA DE ÁUDIO --
 
-// Função que usa a API de síntese de voz do navegador
-function speak() {
+let audioCtx: AudioContext | null = null;
+let isUnlocked = false;
+let audioElement: HTMLAudioElement | null = null;
+
+function getAudioCtx() {
+  if (!audioCtx) audioCtx = new AudioContext();
+  if (audioCtx.state === "suspended") audioCtx.resume();
+  return audioCtx;
+}
+
+// Desbloqueia o áudio no navegador (precisa ser chamado num clique do usuário)
+function unlockAudio() {
+  if (isUnlocked) return;
   try {
-    if (!("speechSynthesis" in window)) {
-      console.warn("Este navegador não suporta síntese de voz.");
-      return;
+    const ctx = getAudioCtx();
+    // Toca um som mudo para "desbloquear" o contexto de áudio
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    gain.gain.value = 0; // Mudo
+    osc.connect(gain).connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.01);
+
+    // Prepara o áudio MP3 em segundo plano
+    if (!audioElement) {
+      audioElement = new Audio("/audio/novo-pedido.mp3");
+      audioElement.volume = 1.0;
+      // Força o carregamento do arquivo
+      audioElement.load();
     }
 
-    // Cancela qualquer fala anterior que ainda esteja tocando
-    window.speechSynthesis.cancel();
-
-    const utterance = new SpeechSynthesisUtterance("Atenção, um novo pedido!");
-    utterance.lang = "pt-BR";
-    utterance.volume = 1; // Volume máximo (0 a 1)
-    utterance.rate = 1.1; // Velocidade um pouco mais rápida para chamar atenção
-    utterance.pitch = 0.9; // Tom um pouco mais grave
-
-    window.speechSynthesis.speak(utterance);
+    isUnlocked = true;
+    console.log("🔊 Áudio desbloqueado com sucesso!");
   } catch (err) {
-    console.error("Erro ao tentar falar:", err);
+    console.error("Erro ao desbloquear áudio:", err);
   }
 }
+
+// Campainha (Ding-Dong gerada por código)
+function playDoorbell() {
+  try {
+    const ctx = getAudioCtx();
+    const now = ctx.currentTime;
+
+    const notes = [
+      { freq: 659.25, start: now, duration: 0.6 },
+      { freq: 523.25, start: now + 0.3, duration: 0.8 },
+    ];
+
+    notes.forEach((note) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = note.freq;
+      gain.gain.setValueAtTime(0, note.start);
+      gain.gain.linearRampToValueAtTime(1.0, note.start + 0.04);
+      gain.gain.exponentialRampToValueAtTime(0.001, note.start + note.duration);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(note.start);
+      osc.stop(note.start + note.duration);
+    });
+  } catch (err) {
+    console.error("Erro na campainha:", err);
+  }
+}
+
+// Toca o MP3
+function playAudioFile(onEnd?: () => void) {
+  if (!audioElement) {
+    audioElement = new Audio("/audio/novo-pedido.mp3");
+    audioElement.volume = 1.0;
+  }
+
+  // Reseta o áudio para o começo (caso já tenha tocado antes)
+  audioElement.currentTime = 0;
+
+  audioElement.onended = () => {
+    if (onEnd) onEnd();
+  };
+
+  audioElement.play().catch((err) => {
+    console.error(
+      "🚨 BLOQUEIO DE ÁUDIO! O navegador bloqueou o MP3. Clique na tela primeiro.",
+      err,
+    );
+  });
+}
+
+function triggerFullAlert() {
+  unlockAudio(); // Garante que está desbloqueado
+  playDoorbell();
+
+  setTimeout(() => {
+    playAudioFile(() => {
+      setTimeout(() => {
+        playAudioFile();
+      }, 500);
+    });
+  }, 1200);
+}
+
+// -- COMPONENTE --
 
 const COLS = [
   { key: "novo", title: "Novos", statuses: ["novo", "cancelamento_solicitado"] },
@@ -55,11 +125,53 @@ const COLS = [
   { key: "pronto", title: "Prontos", statuses: ["pronto"] },
 ] as const;
 
+function isBebida(catName: string | undefined | null, productName: string) {
+  const nomeBase = `${catName || ""} ${productName}`
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+  return (
+    nomeBase.includes("bebida") ||
+    nomeBase.includes("suco") ||
+    nomeBase.includes("cerveja") ||
+    nomeBase.includes("drink") ||
+    nomeBase.includes("dose") ||
+    nomeBase.includes("long neck") ||
+    nomeBase.includes("refrigerante") ||
+    nomeBase.includes("agua") ||
+    nomeBase.includes("nao alcoolic")
+  );
+}
+
 function Kitchen() {
   const { rid } = Route.useParams();
   const role = useRestaurantRole(rid)!;
   const [sound, setSound] = useState(true);
+
   useRealtime(rid, ["orders"], [["orders", rid]]);
+
+  // Desbloqueia o áudio no primeiro clique em qualquer lugar da tela da cozinha
+  useEffect(() => {
+    const handleGlobalClick = () => unlockAudio();
+    window.addEventListener("click", handleGlobalClick);
+    return () => window.removeEventListener("click", handleGlobalClick);
+  }, []);
+
+  // Atalho de teclado para testar o som (tecla "T")
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() === "t" && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        if (
+          document.activeElement?.tagName === "INPUT" ||
+          document.activeElement?.tagName === "TEXTAREA"
+        )
+          return;
+        triggerFullAlert();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   const { data: ordersRaw = [] } = useQuery({
     queryKey: ["orders", rid, "kitchen"],
@@ -67,36 +179,22 @@ function Kitchen() {
       ((
         await supabase
           .from("orders")
-          .select(
-            `
-            *,
-            items:order_items(
-              *,
-              product:products(
-                description,
-                categories(name)
-            )
-          `,
-          ) // Incluímos a categoria do produto
+          .select(`*, items:order_items(*, product:products(description, categories(name)))`)
           .eq("restaurant_id", rid)
           .in("status", ["novo", "aceito", "em_preparo", "pronto", "cancelamento_solicitado"])
           .order("created_at")
       ).data ?? []) as any[],
   });
 
-  // Filtra os itens de cada pedido, removendo as bebidas
   const orders = ordersRaw
     .map((order) => {
       const itemsFiltrados = order.items.filter((item: any) => {
         const catName = item.product?.categories?.name;
-        // Se a categoria estiver na lista de exclusão, não mostra
-        if (catName && DRINK_CATEGORIES.includes(catName)) return false;
-        return true;
+        const prodName = item.product_name || item.product?.name || "";
+        return !isBebida(catName, prodName);
       });
-
       return { ...order, items: itemsFiltrados };
     })
-    // Remove pedidos que ficaram sem itens (ex: pedido só de bebida)
     .filter((order) => order.items.length > 0);
 
   const seen = useRef<Set<string> | null>(null);
@@ -107,8 +205,7 @@ function Kitchen() {
     if (seen.current) {
       const n = [...ids].filter((id) => !seen.current!.has(id));
       if (n.length) {
-        // Se o som estiver ativado, dispara a voz
-        if (sound) speak();
+        if (sound) triggerFullAlert();
         setFresh(new Set(n));
       }
     }
@@ -119,18 +216,29 @@ function Kitchen() {
     <div>
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-3xl font-extrabold">Cozinha</h1>
-        <Button
-          variant="outline"
-          onClick={() => {
-            const next = !sound;
-            setSound(next);
-            // Feedback sonoro (opcional) ao ligar o som
-            if (next) speak();
-          }}
-        >
-          {sound ? <Bell /> : <BellOff />} Som {sound ? "ligado" : "desligado"}
-        </Button>
+
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={() => triggerFullAlert()}
+            title="Testar som (Atalho: tecla T)"
+          >
+            <Volume2 className="mr-2 size-4" /> Testar Som
+          </Button>
+
+          <Button
+            variant="outline"
+            onClick={() => {
+              const next = !sound;
+              setSound(next);
+              if (next) triggerFullAlert();
+            }}
+          >
+            {sound ? <Bell /> : <BellOff />} Som {sound ? "ligado" : "desligado"}
+          </Button>
+        </div>
       </div>
+
       <div className="grid gap-4 lg:grid-cols-3">
         {COLS.map((c) => {
           const list = orders.filter((o) => (c.statuses as readonly string[]).includes(o.status));
