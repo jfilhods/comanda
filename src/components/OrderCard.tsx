@@ -61,6 +61,33 @@ export function StatusBadge({ s }: { s: OrderStatus }) {
   );
 }
 
+const AUTO_DELIVER_CATEGORIES = [
+  "drinks",
+  "sucos naturais",
+  "doses",
+  "bebidas",
+  "long necks",
+  "cervejas 600ml",
+  "não alcoólicos",
+  "nao alcoolicos",
+];
+
+function isBebida(nomeItem: string) {
+  const n = nomeItem
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+  // Checagem heurística pelo nome do produto (já que não temos a categoria no payload do item)
+  return (
+    n.includes("suco") ||
+    n.includes("cerveja") ||
+    n.includes("drink") ||
+    n.includes("refrigerante") ||
+    n.includes("agua") ||
+    n.includes("dose")
+  );
+}
+
 export function OrderCard({
   o,
   role,
@@ -75,6 +102,7 @@ export function OrderCard({
   const qc = useQueryClient();
   const next = nextStep(o.status, role);
   const mgr = role === "gerente" || role === "admin";
+  const isGarcom = role === "garcom";
   const refresh = () => qc.invalidateQueries({ queryKey: ["orders"] });
 
   async function cancel() {
@@ -87,6 +115,9 @@ export function OrderCard({
     if (await changeStatus(o.id, to, reason)) refresh();
   }
 
+  // Verifica se o pedido tem apenas bebidas (se sim, o gerente não precisa preparar)
+  const allItemsAreBebidas = o.items.every((i) => isBebida(i.product_name));
+
   return (
     <div className={`card-surface flex flex-col p-4 ${highlight ? "animate-new-order" : ""}`}>
       <div className="flex items-center justify-between gap-2">
@@ -96,27 +127,43 @@ export function OrderCard({
             #{o.number} · {time(o.created_at)}
           </span>
         </div>
-        <StatusBadge s={o.status} />
+        {/* Se for garçom e só tiver bebida, mostramos entregue direto no topo também */}
+        <StatusBadge s={isGarcom && allItemsAreBebidas ? "entregue" : o.status} />
       </div>
       <ul className={`mt-3 space-y-1.5 ${big ? "text-base" : "text-sm"}`}>
-        {o.items.map((i) => (
-          <li key={i.id}>
-            <div className="flex justify-between gap-2">
-              <span>
-                <b>{i.quantity}×</b> {i.product_name}
-                <b>{i.product?.description && ` - ${i.product.description}`}</b>
-              </span>
-              {!big && <span className="text-muted-foreground">{brl(i.subtotal)}</span>}
-            </div>
-            {i.notes && <div className="ml-6 text-sm font-medium text-primary">↳ {i.notes}</div>}
-          </li>
-        ))}
+        {o.items.map((i) => {
+          const itemIsBebida = isBebida(i.product_name);
+          const showAsDelivered = isGarcom && itemIsBebida;
+
+          return (
+            <li key={i.id}>
+              <div className="flex justify-between gap-2 items-center">
+                <span>
+                  <b>{i.quantity}×</b> {i.product_name}
+                  <b>{i.product?.description && ` - ${i.product.description}`}</b>
+                </span>
+                <div className="flex items-center gap-2">
+                  {!big && <span className="text-muted-foreground">{brl(i.subtotal)}</span>}
+                  {/* Badge individual do item */}
+                  {showAsDelivered && (
+                    <span className="text-[10px] uppercase font-bold text-emerald-600 bg-emerald-100 px-1.5 py-0.5 rounded">
+                      Entregue
+                    </span>
+                  )}
+                </div>
+              </div>
+              {i.notes && <div className="ml-6 text-sm font-medium text-primary">↳ {i.notes}</div>}
+            </li>
+          );
+        })}
       </ul>
       {o.notes && <p className="mt-2 rounded-md bg-accent/30 px-2 py-1 text-sm">Obs.: {o.notes}</p>}
       {o.cancel_reason && <p className="mt-2 text-sm text-st-cancel">Motivo: {o.cancel_reason}</p>}
       {!big && <div className="mt-2 text-right font-semibold">{brl(o.total)}</div>}
+
       <div className="mt-auto flex flex-wrap gap-2 pt-3">
-        {next && (
+        {/* O botão de próximo passo aparece para o gerente e cozinha (fluxo normal) */}
+        {next && !(isGarcom && allItemsAreBebidas) && (
           <Button
             size={big ? "lg" : "sm"}
             className="flex-1"

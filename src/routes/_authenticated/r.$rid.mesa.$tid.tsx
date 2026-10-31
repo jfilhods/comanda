@@ -4,12 +4,22 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, useRef } from "react";
 import { toast } from "sonner";
-import { ArrowLeft, Minus, Plus, Send, Receipt, Search, Printer, ShoppingCart } from "lucide-react";
+import {
+  ArrowLeft,
+  Minus,
+  Plus,
+  Send,
+  Receipt,
+  Search,
+  Printer,
+  ShoppingCart,
+  FileText,
+} from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Switch } from "@/components/ui/switch"; // Importação do Switch
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -31,6 +41,18 @@ export const Route = createFileRoute("/_authenticated/r/$rid/mesa/$tid")({
 type Line = { product_id: string; name: string; price: number; quantity: number; notes: string };
 const SERVICE_FEE_RATE = 0.1; // 10% de taxa de serviço
 
+// Lista de categorias que já nascem entregues
+const AUTO_DELIVER_CATEGORIES = [
+  "drinks",
+  "sucos naturais",
+  "doses",
+  "bebidas",
+  "long necks",
+  "cervejas 600ml",
+  "não alcoólicos",
+  "nao alcoolicos",
+];
+
 function normalizeStr(str: string) {
   return str
     .normalize("NFD")
@@ -48,15 +70,16 @@ function TablePage() {
 
   // Estados para o fechamento da conta
   const [isCloseOpen, setIsCloseOpen] = useState(false);
-  const [applyServiceFee, setApplyServiceFee] = useState(true); // NOVO: Controla se a taxa será aplicada
+  const [applyServiceFee, setApplyServiceFee] = useState(true);
   const [payMethod1, setPayMethod1] = useState("pix");
   const [payValue1, setPayValue1] = useState("");
   const [payMethod2, setPayMethod2] = useState("dinheiro");
   const [payValue2, setPayValue2] = useState("");
   const [isReceiptOpen, setIsReceiptOpen] = useState(false);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [receiptData, setReceiptData] = useState<any>(null);
   const printRef = useRef<HTMLDivElement>(null);
+
+  const comandaRef = useRef<HTMLDivElement>(null);
 
   useRealtime(
     rid,
@@ -117,23 +140,20 @@ function TablePage() {
   const [busy, setBusy] = useState(false);
   const total = cart.reduce((s, l) => s + l.price * l.quantity, 0);
 
-  // Lógica de Taxa de Serviço Dinâmica
   const subtotal = orders
-    .flatMap((o) => o.items) // Pega todos os itens de todos os pedidos da sessão
-    .filter((item) => item.status !== "cancelado") // Filtra itens cancelados
+    .flatMap((o) => o.items)
+    .filter((item) => item.status !== "cancelado")
     .reduce((sum, item) => sum + Number(item.subtotal), 0);
-  // Se o switch estiver ligado, calcula 10%, senão é 0.
   const serviceFee = applyServiceFee ? subtotal * SERVICE_FEE_RATE : 0;
   const consumed = subtotal + serviceFee;
+  const consumedWithoutFee = subtotal;
 
   const mgr = role === "gerente" || role === "admin";
 
-  // Todos os produtos achatados para a busca
   const allProducts = menu
     .flatMap((c) => c.products.map((p) => ({ ...p, categoryName: c.name })))
     .filter((p) => p.active);
 
-  // Lógica de busca
   const searchResults = search.trim()
     ? allProducts.filter((p) => normalizeStr(p.name).includes(normalizeStr(search)))
     : [];
@@ -158,17 +178,44 @@ function TablePage() {
 
   async function send() {
     setBusy(true);
-    const { error } = await supabase.rpc("create_order", {
+
+    // Chama a RPC para criar o pedido
+    const { data: newOrderId, error } = await supabase.rpc("create_order", {
       _table_id: tid,
       _items: cart.map(({ product_id, quantity, notes }) => ({ product_id, quantity, notes })),
       _notes: notes,
     });
-    setBusy(false);
+
     if (error) {
+      setBusy(false);
       toast.error(error.message);
       return;
     }
-    toast.success("Pedido enviado para a cozinha");
+
+    // NOVO: Atualiza no frontend os itens que devem nascer como "entregue"
+    try {
+      // Filtra os itens do carrinho que são de categorias de bebida
+      const autoDeliverProductIds = cart
+        .filter((cartItem) => {
+          const prod = allProducts.find((p) => p.id === cartItem.product_id);
+          return prod && AUTO_DELIVER_CATEGORIES.includes(normalizeStr(prod.categoryName));
+        })
+        .map((c) => c.product_id);
+
+      // Se houver itens de bebida, atualiza o status deles no banco
+      if (autoDeliverProductIds.length > 0 && newOrderId) {
+        await supabase
+          .from("order_items")
+          .update({ status: "entregue" })
+          .eq("order_id", newOrderId)
+          .in("product_id", autoDeliverProductIds);
+      }
+    } catch (err) {
+      console.error("Erro ao auto-entregar bebidas:", err);
+    }
+
+    setBusy(false);
+    toast.success("Pedido enviado!");
     setCart([]);
     setNotes("");
     setIsCartOpen(false);
@@ -190,7 +237,6 @@ function TablePage() {
     const v1 = Number(payValue1.replace(",", ".")) || 0;
     const v2 = payValue2 ? Number(payValue2.replace(",", ".")) : 0;
 
-    // A validação usa o 'consumed', que é recalculado dinamicamente com base no Switch
     if (v2 > 0 && Math.abs(v1 + v2 - consumed) > 0.01) {
       toast.error("A soma das formas de pagamento não bate com o total.");
       return;
@@ -208,7 +254,6 @@ function TablePage() {
       return;
     }
 
-    // Atualiza o valor pago com o valor final (seja com ou sem taxa)
     if (v2 > 0) {
       await supabase
         .from("table_sessions")
@@ -228,7 +273,7 @@ function TablePage() {
       orders: orders.filter((o) => o.status !== "cancelado"),
       total: consumed,
       subtotal: subtotal,
-      serviceFee: serviceFee, // Salva na nota o valor da taxa (que pode ser 0)
+      serviceFee: serviceFee,
       p1: { method: payMethod1, value: finalV1 },
       p2: v2 > 0 ? { method: payMethod2, value: v2 } : null,
       date: new Date(),
@@ -241,11 +286,7 @@ function TablePage() {
     qc.invalidateQueries({ queryKey: ["table", tid] });
   }
 
-  function handlePrint() {
-    const printContent = printRef.current;
-    if (!printContent) return;
-    const originalTitle = document.title;
-    document.title = `Conta_Mesa_${table?.label}`;
+  function openPrint(html: string, title: string) {
     const printWindow = window.open("", "", "height=600,width=400");
     if (!printWindow) {
       toast.error("Bloqueador de pop-up impediu a impressão.");
@@ -254,16 +295,38 @@ function TablePage() {
     printWindow.document.write(
       "<html><head><title>Comprovante</title><style>body { font-family: 'Courier New', Courier, monospace; font-size: 12px; width: 80mm; margin: 0 auto; color: #000; } .text-center { text-align: center; } .text-right { text-align: right; } .font-bold { font-weight: bold; } .divider { border-bottom: 1px dashed #000; margin: 8px 0; } table { width: 100%; border-collapse: collapse; } th, td { padding: 2px 0; font-size: 12px; } .total { font-size: 14px; font-weight: bold; } h1, h2, h3 { margin: 4px 0; }</style></head><body>",
     );
-    printWindow.document.write(printContent.innerHTML);
+    printWindow.document.write(html);
     printWindow.document.write("</body></html>");
     printWindow.document.close();
     printWindow.focus();
     setTimeout(() => {
       printWindow.print();
       printWindow.close();
-      document.title = originalTitle;
     }, 250);
   }
+
+  function handlePrint() {
+    const printContent = printRef.current;
+    if (!printContent) return;
+    const originalTitle = document.title;
+    document.title = `Conta_Mesa_${table?.label}`;
+    openPrint(printContent.innerHTML, `Conta_Mesa_${table?.label}`);
+    document.title = originalTitle;
+  }
+
+  function handlePrintComanda() {
+    const el = comandaRef.current;
+    if (!el) {
+      toast.error("Nada para imprimir nesta mesa.");
+      return;
+    }
+    openPrint(el.innerHTML, `Comanda_Mesa_${table?.label}`);
+  }
+
+  const comandaItems = orders
+    .filter((o) => o.status !== "cancelado")
+    .flatMap((o) => o.items)
+    .filter((i) => i.status !== "cancelado");
 
   return (
     <div className="pb-24">
@@ -285,6 +348,11 @@ function TablePage() {
             </div>
           </div>
           <div className="flex gap-1">
+            {sid && orders.length > 0 && (
+              <Button variant="outline" size="sm" onClick={handlePrintComanda} className="h-9 px-3">
+                <FileText className="size-4 mr-1" /> Comanda
+              </Button>
+            )}
             {sid && table?.status !== "aguardando_pagamento" && (
               <Button variant="outline" size="sm" onClick={requestBill} className="h-9 px-3">
                 <Receipt className="size-4 mr-1" /> Conta
@@ -302,7 +370,6 @@ function TablePage() {
                     <DialogTitle>Fechar Conta - Mesa {table?.label}</DialogTitle>
                   </DialogHeader>
                   <div className="space-y-4 py-4">
-                    {/* NOVO: Switch para ativar/desativar a taxa */}
                     <div className="flex items-center justify-between rounded-lg border p-3">
                       <div className="space-y-0.5">
                         <Label className="text-base">Taxa de Serviço (10%)</Label>
@@ -585,7 +652,7 @@ function TablePage() {
               </table>
               <div className="divider"></div>
               <div className="flex justify-between text-sm mt-2">
-                <span>Subtotal:</span>
+                <span>Subtotal (sem taxa):</span>
                 <span>{brl(receiptData?.subtotal || 0)}</span>
               </div>
               <div className="flex justify-between text-sm">
@@ -619,6 +686,62 @@ function TablePage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Template oculto da comanda de consumo (com e sem 10%) */}
+      <div className="hidden">
+        <div ref={comandaRef} className="text-black font-mono text-sm mx-auto max-w-[300px]">
+          <div className="text-center mb-2">
+            <h2 className="text-lg font-bold uppercase">
+              {table?.restaurants?.name || "RESTAURANTE"}
+            </h2>
+            {table?.restaurants?.address && <p className="text-xs">{table.restaurants.address}</p>}
+            {table?.restaurants?.phone && <p className="text-xs">Tel: {table.restaurants.phone}</p>}
+          </div>
+          <div className="divider"></div>
+          <div className="text-xs mb-2">
+            <p>
+              <strong>Data:</strong> {new Date().toLocaleString("pt-BR")}
+            </p>
+            <p>
+              <strong>Mesa:</strong> {table?.label}
+            </p>
+          </div>
+          <div className="divider"></div>
+          <table>
+            <thead>
+              <tr>
+                <th className="text-left">Qtd</th>
+                <th className="text-left">Item</th>
+                <th className="text-right">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {comandaItems.map((i: any) => (
+                <tr key={i.id}>
+                  <td>{i.quantity}x</td>
+                  <td>{i.product_name}</td>
+                  <td className="text-right">{brl(i.subtotal)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="divider"></div>
+          <div className="flex justify-between text-sm mt-2">
+            <span>Subtotal (sem 10%):</span>
+            <span>{brl(consumedWithoutFee)}</span>
+          </div>
+          <div className="flex justify-between text-sm">
+            <span>Taxa de serviço (10%):</span>
+            <span>{brl(subtotal * SERVICE_FEE_RATE)}</span>
+          </div>
+          <div className="flex justify-between font-bold text-base mt-2">
+            <span>TOTAL com 10%:</span>
+            <span>{brl(consumedWithoutFee + subtotal * SERVICE_FEE_RATE)}</span>
+          </div>
+          <div className="divider"></div>
+          <p className="text-center text-xs mt-2">Obrigado pela preferência!</p>
+        </div>
+      </div>
     </div>
   );
 }

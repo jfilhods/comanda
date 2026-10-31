@@ -25,12 +25,28 @@ const DRINK_CATEGORIES = [
   "Sucos Naturais",
   "Drinks",
 ];
-let audioCtx: AudioContext | null = null;
 
-function getCtx() {
-  if (!audioCtx) audioCtx = new AudioContext();
-  if (audioCtx.state === "suspended") audioCtx.resume();
-  return audioCtx;
+// Função que usa a API de síntese de voz do navegador
+function speak() {
+  try {
+    if (!("speechSynthesis" in window)) {
+      console.warn("Este navegador não suporta síntese de voz.");
+      return;
+    }
+
+    // Cancela qualquer fala anterior que ainda esteja tocando
+    window.speechSynthesis.cancel();
+
+    const utterance = new SpeechSynthesisUtterance("Atenção, um novo pedido!");
+    utterance.lang = "pt-BR";
+    utterance.volume = 1; // Volume máximo (0 a 1)
+    utterance.rate = 1.1; // Velocidade um pouco mais rápida para chamar atenção
+    utterance.pitch = 0.9; // Tom um pouco mais grave
+
+    window.speechSynthesis.speak(utterance);
+  } catch (err) {
+    console.error("Erro ao tentar falar:", err);
+  }
 }
 
 const COLS = [
@@ -39,29 +55,12 @@ const COLS = [
   { key: "pronto", title: "Prontos", statuses: ["pronto"] },
 ] as const;
 
-function beep() {
-  try {
-    const ctx = getCtx();
-    [0, 0.18].forEach((t) => {
-      const o = ctx.createOscillator();
-      const g = ctx.createGain();
-      o.frequency.value = 880;
-      g.gain.setValueAtTime(0.25, ctx.currentTime + t);
-      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.15);
-      o.connect(g).connect(ctx.destination);
-      o.start(ctx.currentTime + t);
-      o.stop(ctx.currentTime + t + 0.16);
-    });
-  } catch {
-    /* ignore */
-  }
-}
-
 function Kitchen() {
   const { rid } = Route.useParams();
   const role = useRestaurantRole(rid)!;
   const [sound, setSound] = useState(true);
   useRealtime(rid, ["orders"], [["orders", rid]]);
+
   const { data: ordersRaw = [] } = useQuery({
     queryKey: ["orders", rid, "kitchen"],
     queryFn: async () =>
@@ -102,12 +101,14 @@ function Kitchen() {
 
   const seen = useRef<Set<string> | null>(null);
   const [fresh, setFresh] = useState<Set<string>>(new Set());
+
   useEffect(() => {
     const ids = new Set(orders.filter((o) => o.status === "novo").map((o) => o.id));
     if (seen.current) {
       const n = [...ids].filter((id) => !seen.current!.has(id));
       if (n.length) {
-        if (sound) beep();
+        // Se o som estiver ativado, dispara a voz
+        if (sound) speak();
         setFresh(new Set(n));
       }
     }
@@ -123,7 +124,8 @@ function Kitchen() {
           onClick={() => {
             const next = !sound;
             setSound(next);
-            if (next) beep(); // clique = desbloqueio + feedback sonoro
+            // Feedback sonoro (opcional) ao ligar o som
+            if (next) speak();
           }}
         >
           {sound ? <Bell /> : <BellOff />} Som {sound ? "ligado" : "desligado"}

@@ -26,7 +26,8 @@ export const createStaff = createServerFn({ method: "POST" })
     if (parsed.role === "gerente" && !parsed.email) {
       throw new Error("Gerentes precisam de e-mail.");
     }
-    if (parsed.role !== "gerente" && !parsed.username) {
+    // CORREÇÃO: usa trim para não considerar "   " como username válido
+    if (parsed.role !== "gerente" && !parsed.username?.trim()) {
       throw new Error("Outros cargos precisam de username.");
     }
     return parsed;
@@ -42,27 +43,33 @@ export const createStaff = createServerFn({ method: "POST" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
     const emailToUse = (data.email ?? "").trim().toLowerCase();
-    const usernameToSave = data.role === "gerente" ? null : data.username?.trim().toLowerCase();
 
-    if (data.role === "gerente" && !emailToUse) {
+    // CORREÇÃO: calcula o username uma única vez, com trim, e só para não-gerente
+    const isManager = data.role === "gerente";
+    const usernameToSave = isManager ? null : (data.username ?? "").trim().toLowerCase();
+
+    if (isManager && !emailToUse) {
       throw new Error("Gerentes precisam de e-mail.");
     }
-    if (data.role !== "gerente" && !usernameToSave) {
+    if (!isManager && !usernameToSave) {
       throw new Error("Outros cargos precisam de username.");
     }
     if (!emailToUse) {
       throw new Error("E-mail é obrigatório para cadastrar um funcionário.");
     }
 
+    // CORREÇÃO: verifica se o username já está em uso por OUTRO usuário
+    // (antes, ao recadastrar o mesmo funcionário, ele mesmo era encontrado e
+    // disparava "Este nome de usuário já está em uso.")
     if (usernameToSave) {
       const { data: existingUser, error } = await supabaseAdmin
         .from("profiles")
-        .select("id")
+        .select("id, email")
         .ilike("staff_username", usernameToSave)
         .maybeSingle();
 
       if (error) throw new Error(error.message);
-      if (existingUser) {
+      if (existingUser && existingUser.email?.toLowerCase() !== emailToUse) {
         throw new Error("Este nome de usuário já está em uso.");
       }
     }
@@ -76,6 +83,14 @@ export const createStaff = createServerFn({ method: "POST" })
 
     if (existing) {
       userId = existing.id;
+
+      // CORREÇÃO: quando o usuário já existe, atualiza a senha para o PIN
+      // informado pelo gerente. Antes, o PIN novo era ignorado e o funcionário
+      // ficava preso à senha antiga.
+      const { error: updErr } = await supabaseAdmin.auth.admin.updateUserById(userId, {
+        password: data.password,
+      });
+      if (updErr) throw new Error(`Erro ao atualizar senha: ${updErr.message}`);
     } else {
       const { data: created, error } = await supabaseAdmin.auth.admin.createUser({
         email: emailToUse!,
@@ -87,16 +102,22 @@ export const createStaff = createServerFn({ method: "POST" })
       userId = created.user.id;
     }
 
-    const { error: profileError } = await supabaseAdmin.from("profiles").upsert(
-      {
-        id: userId,
-        full_name: data.fullName,
-        email: emailToUse!,
-        staff_username: usernameToSave,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      } as any,
-      { onConflict: "id" },
-    );
+    // CORREÇÃO: só inclui staff_username no payload quando houver valor.
+    // Antes, o upsert gravava `staff_username: null` e apagava o username
+    // de funcionários já existentes, quebrando o login por usuário.
+    const profilePayload: Record<string, unknown> = {
+      id: userId,
+      full_name: data.fullName,
+      email: emailToUse!,
+    };
+    if (usernameToSave) {
+      profilePayload.staff_username = usernameToSave;
+    }
+
+    const { error: profileError } = await supabaseAdmin
+      .from("profiles")
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .upsert(profilePayload as any, { onConflict: "id" });
 
     if (profileError) {
       throw new Error(`Erro ao salvar perfil: ${profileError.message}`);
